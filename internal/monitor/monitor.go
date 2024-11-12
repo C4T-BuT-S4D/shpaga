@@ -82,7 +82,9 @@ func (m *Monitor) HandleUserJoined(c telebot.Context) error {
 		}
 
 		greeting := fmt.Sprintf(
-			"Welcome to the chat, %s! Please, press the button below to log in with https://ctftime.org. You won't be able to send messages until you do so.",
+			`Welcome to the chat, %s! Please, press the button below to log in with https://ctftime.org. 
+			You won't be able to send messages until you do so. 
+			The bot will kick you in 10 minutes if you don't login.`,
 			name,
 		)
 		markup := &telebot.ReplyMarkup{}
@@ -147,17 +149,17 @@ func (m *Monitor) RunCleaner(ctx context.Context) {
 					if err != nil {
 						logrus.Errorf("failed to get user: %v", err)
 					} else if user.Status == models.UserStatusJustJoined {
-						logrus.Info("removing user %v by timeout", user.TelegramID)
+						logrus.Infof("removing user %v by timeout", user.TelegramID)
 
-						if err := m.bot.Ban(
+						if err := m.bot.Unban(
 							&telebot.Chat{ID: user.ChatID},
-							&telebot.ChatMember{User: &telebot.User{ID: user.TelegramID}},
+							&telebot.User{ID: user.TelegramID},
 						); err != nil {
-							logrus.Errorf("failed to bad user %v: %v", err)
+							logrus.Errorf("failed to kick user %v: %v", user, err)
 						}
 
 						if err := m.storage.OnUserBanned(ctx, user.ID); err != nil {
-							logrus.Errorf("failed to update user to banned %v: %v", err)
+							logrus.Errorf("failed to update user to banned %v: %v", user, err)
 						}
 					}
 				}
