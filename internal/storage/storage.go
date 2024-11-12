@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/C4T-BuT-S4D/shpago/internal/models"
+	"github.com/C4T-BuT-S4D/shpaga/internal/models"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

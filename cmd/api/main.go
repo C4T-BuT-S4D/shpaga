@@ -3,10 +3,10 @@ package main
 import (
 	"time"
 
-	"github.com/C4T-BuT-S4D/shpago/internal/api"
-	"github.com/C4T-BuT-S4D/shpago/internal/config"
-	"github.com/C4T-BuT-S4D/shpago/internal/logging"
-	"github.com/C4T-BuT-S4D/shpago/internal/storage"
+	"github.com/C4T-BuT-S4D/shpaga/internal/api"
+	"github.com/C4T-BuT-S4D/shpaga/internal/config"
+	"github.com/C4T-BuT-S4D/shpaga/internal/logging"
+	"github.com/C4T-BuT-S4D/shpaga/internal/storage"
 	"github.com/labstack/echo/v4"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"

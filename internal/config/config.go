@@ -26,7 +26,7 @@ func New() *Config {
 func SetupCommon() {
 	viper.SetDefault("ctftime_oauth_host", "oauth.ctftime.org")
 	viper.SetDefault("ctftime_redirect_url", "http://localhost:8080/oauth_callback")
-	viper.SetEnvPrefix("SHPAGO")
+	viper.SetEnvPrefix("SHPAGA")
 
 	viper.BindEnv("telegram_token")
 	viper.BindEnv("ctftime_client_id")

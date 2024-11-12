@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/C4T-BuT-S4D/shpago/internal/authutil"
-	"github.com/C4T-BuT-S4D/shpago/internal/config"
-	"github.com/C4T-BuT-S4D/shpago/internal/models"
-	"github.com/C4T-BuT-S4D/shpago/internal/storage"
+	"github.com/C4T-BuT-S4D/shpaga/internal/authutil"
+	"github.com/C4T-BuT-S4D/shpaga/internal/config"
+	"github.com/C4T-BuT-S4D/shpaga/internal/models"
+	"github.com/C4T-BuT-S4D/shpaga/internal/storage"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/telebot.v4"
 )

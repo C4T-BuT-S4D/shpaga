@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/C4T-BuT-S4D/shpago/internal/config"
+	"github.com/C4T-BuT-S4D/shpaga/internal/config"
 )
 
 func GetCTFTimeOAuthURL(userID string, chatID int64, config *config.Config) (string, error) {

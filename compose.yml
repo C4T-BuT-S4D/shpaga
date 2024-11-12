@@ -5,11 +5,11 @@ services:
       dockerfile: conf/bot/Dockerfile
     restart: unless-stopped
     environment:
-      SHPAGO_POSTGRES_DSN: "host=db user=shpago password=shpago dbname=shpago port=5432 sslmode=disable"
-      SHPAGO_TELEGRAM_TOKEN: "${SHPAGO_TELEGRAM_TOKEN}"
-      SHPAGO_CTFTIME_CLIENT_ID: "${SHPAGO_CTFTIME_CLIENT_ID}"
-      SHPAGO_CTFTIME_CLIENT_SECRET: "${SHPAGO_CTFTIME_CLIENT_SECRET}"
-      SHPAGO_CTFTIME_REDIRECT_URL: "${SHPAGO_CTFTIME_REDIRECT_URL}"
+      SHPAGA_POSTGRES_DSN: "host=db user=shpaga password=shpaga dbname=shpaga port=5432 sslmode=disable"
+      SHPAGA_TELEGRAM_TOKEN: "${SHPAGA_TELEGRAM_TOKEN}"
+      SHPAGA_CTFTIME_CLIENT_ID: "${SHPAGA_CTFTIME_CLIENT_ID}"
+      SHPAGA_CTFTIME_CLIENT_SECRET: "${SHPAGA_CTFTIME_CLIENT_SECRET}"
+      SHPAGA_CTFTIME_REDIRECT_URL: "${SHPAGA_CTFTIME_REDIRECT_URL}"
   
   api:
     build:
@@ -17,18 +17,18 @@ services:
       dockerfile: conf/api/Dockerfile
     restart: unless-stopped
     environment:
-      SHPAGO_POSTGRES_DSN: "host=db user=shpago password=shpago dbname=shpago port=5432 sslmode=disable"
-      SHPAGO_TELEGRAM_TOKEN: "${SHPAGO_TELEGRAM_TOKEN}"
-      SHPAGO_CTFTIME_CLIENT_ID: "${SHPAGO_CTFTIME_CLIENT_ID}"
-      SHPAGO_CTFTIME_REDIRECT_URL: "${SHPAGO_CTFTIME_REDIRECT_URL}"
+      SHPAGA_POSTGRES_DSN: "host=db user=shpaga password=shpaga dbname=shpaga port=5432 sslmode=disable"
+      SHPAGA_TELEGRAM_TOKEN: "${SHPAGA_TELEGRAM_TOKEN}"
+      SHPAGA_CTFTIME_CLIENT_ID: "${SHPAGA_CTFTIME_CLIENT_ID}"
+      SHPAGA_CTFTIME_REDIRECT_URL: "${SHPAGA_CTFTIME_REDIRECT_URL}"
     ports:
       - "80:8080"
   
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: shpago
-      POSTGRES_PASSWORD: shpago
-      POSTGRES_DB: shpago
+      POSTGRES_USER: shpaga
+      POSTGRES_PASSWORD: shpaga
+      POSTGRES_DB: shpaga
     volumes:
       - ./vol/db/data:/var/lib/postgresql/data
