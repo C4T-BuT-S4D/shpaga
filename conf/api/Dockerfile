@@ -8,7 +8,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
         go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o bot \
+            -o api \
             ./cmd/api/main.go
 
 CMD ["./api"]
