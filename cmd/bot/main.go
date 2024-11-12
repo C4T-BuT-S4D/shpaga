@@ -44,10 +44,6 @@ func main() {
 		logrus.Fatalf("Failed to migrate database: %v", err)
 	}
 
-	if err := db.Exec("TRUNCATE TABLE users").Error; err != nil {
-		logrus.Fatalf("Failed to truncate users table: %v", err)
-	}
-
 	mon := monitor.New(cfg, store, bot)
 
 	bot.Handle(telebot.OnText, mon.HandleMessage)
