@@ -39,7 +39,7 @@ func (m *Monitor) HandleMessage(c telebot.Context) error {
 
 	logrus.Infof("User %d sent message to chat %d", user.TelegramID, c.Chat().ID)
 
-	if user.Status == models.UserStatusJustJoined {
+	if user.Status == models.UserStatusJustJoined || user.Status == models.UserStatusKicked {
 		logrus.Infof("User %d is just joined, removing message until user logs in", user.TelegramID)
 		if err := c.Bot().Delete(c.Message()); err != nil {
 			logrus.Warnf("failed to delete message: %v", err)
@@ -63,6 +63,13 @@ func (m *Monitor) HandleUserJoined(c telebot.Context) error {
 	user, err := m.storage.GetOrCreateUser(ctx, c.Chat().ID, c.Sender().ID, models.UserStatusJustJoined)
 	if err != nil {
 		return fmt.Errorf("failed to get or create user: %w", err)
+	}
+
+	if user.Status == models.UserStatusKicked {
+		if err := m.storage.SetUserStatus(ctx, user.ID, models.UserStatusJustJoined); err != nil {
+			return fmt.Errorf("setting kicked user status: %w", err)
+		}
+		user.Status = models.UserStatusJustJoined
 	}
 
 	switch user.Status {
@@ -158,8 +165,8 @@ func (m *Monitor) RunCleaner(ctx context.Context) {
 							logrus.Errorf("failed to kick user %v: %v", user, err)
 						}
 
-						if err := m.storage.OnUserBanned(ctx, user.ID); err != nil {
-							logrus.Errorf("failed to update user to banned %v: %v", user, err)
+						if err := m.storage.OnUserKicked(ctx, user.ID); err != nil {
+							logrus.Errorf("failed to update user to kicked %v: %v", user, err)
 						}
 					}
 				}

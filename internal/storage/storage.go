@@ -89,14 +89,30 @@ func (s *Storage) OnUserAuthorized(ctx context.Context, userID string, ctftimeUs
 	return nil
 }
 
-func (s *Storage) OnUserBanned(ctx context.Context, userID string) error {
+func (s *Storage) OnUserKicked(ctx context.Context, userID string) error {
 	if err := s.db.
 		WithContext(ctx).
 		Debug().
 		Model(&models.User{}).
 		Where("id = ?", userID).
 		Updates(map[string]any{
-			"status": models.UserStatusBanned,
+			"status": models.UserStatusKicked,
+		}).
+		Error; err != nil {
+		return fmt.Errorf("updating user: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Storage) SetUserStatus(ctx context.Context, userID string, status models.UserStatus) error {
+	if err := s.db.
+		WithContext(ctx).
+		Debug().
+		Model(&models.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]any{
+			"status": status,
 		}).
 		Error; err != nil {
 		return fmt.Errorf("updating user: %w", err)

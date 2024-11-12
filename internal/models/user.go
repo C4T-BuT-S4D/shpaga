@@ -8,6 +8,7 @@ const (
 	UserStatusJustJoined UserStatus = "just_joined"
 	UserStatusBanned     UserStatus = "banned"
 	UserStatusActive     UserStatus = "active"
+	UserStatusKicked     UserStatus = "kicked"
 )
 
 type User struct {
