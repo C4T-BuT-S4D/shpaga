@@ -65,6 +65,8 @@ func main() {
 		telebot.OnText,
 		telebot.OnUserJoined,
 		telebot.OnUserLeft,
+		telebot.OnChatMember,
+		telebot.OnMyChatMember,
 	} {
 		bot.Handle(updateType, mon.HandleAnyUpdate)
 	}

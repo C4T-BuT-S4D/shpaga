@@ -43,18 +43,19 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 	uc := NewUpdateContext(ctx, c)
 
 	uc.L().Debugf(
-		"Received update message=%v, user_joined=%v, user_left=%v",
+		"Received update message=%v, user_joined=%v, user_left=%v, chat_member=%v",
 		c.Message(),
 		c.Message().UserJoined,
 		c.Message().UserLeft,
+		c.ChatMember(),
 	)
 
 	if err := m.storage.UpdateLastUpdate(uc, c.Update().ID); err != nil {
 		uc.L().Errorf("failed to update last update: %v", err)
 	}
 
-	if c.Message() == nil {
-		uc.L().Debugf("ignoring update without message")
+	if c.Message() == nil && c.ChatMember() == nil {
+		uc.L().Debugf("ignoring update without message or chat member")
 		return nil
 	}
 
@@ -68,13 +69,17 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		if err := m.HandlePrivateMessage(uc); err != nil {
 			uc.L().Errorf("failed to handle private message: %v", err)
 		}
-	case c.Message().UserJoined != nil:
-		if err := m.HandleUserJoined(uc); err != nil {
+	case c.Message() != nil && c.Message().UserJoined != nil:
+		if err := m.HandleNewMember(uc); err != nil {
 			uc.L().Errorf("failed to handle user joined: %v", err)
 		}
-	case c.Message().UserLeft != nil:
-		if err := m.HandleChatLeft(uc); err != nil {
+	case c.Message() != nil && c.Message().UserLeft != nil:
+		if err := m.HandleMemberLeft(uc); err != nil {
 			uc.L().Errorf("failed to handle chat left: %v", err)
+		}
+	case c.ChatMember() != nil:
+		if err := m.HandleNewMember(uc); err != nil {
+			uc.L().Errorf("failed to handle chat member update: %v", err)
 		}
 	default:
 		if err := m.HandleChatMessage(uc); err != nil {
@@ -103,7 +108,7 @@ func (m *Monitor) HandleChatMessage(uc *UpdateContext) error {
 	return nil
 }
 
-func (m *Monitor) HandleUserJoined(uc *UpdateContext) error {
+func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 	if uc.Sender().IsBot {
 		uc.L().Infof("bot %s (%d) joined the chat %d, ignoring", uc.Sender().Username, uc.Sender().ID, uc.Chat().ID)
 		return nil
@@ -111,9 +116,11 @@ func (m *Monitor) HandleUserJoined(uc *UpdateContext) error {
 
 	uc.L().Infof("User %s (%d) joined the chat %d", uc.Sender().Username, uc.Sender().ID, uc.Chat().ID)
 
-	uc.L().Infof("Deleting chat join request message")
-	if err := uc.Bot().Delete(uc.Message()); err != nil {
-		return fmt.Errorf("failed to delete chat join request: %w", err)
+	if uc.Message() != nil {
+		uc.L().Infof("Deleting chat join request message")
+		if err := uc.Bot().Delete(uc.Message()); err != nil {
+			return fmt.Errorf("failed to delete chat join request: %w", err)
+		}
 	}
 
 	user, err := m.storage.GetOrCreateUser(uc, uc.Chat().ID, uc.Sender().ID, models.UserStatusJustJoined)
@@ -182,7 +189,7 @@ func (m *Monitor) HandleUserJoined(uc *UpdateContext) error {
 	return nil
 }
 
-func (m *Monitor) HandleChatLeft(uc *UpdateContext) error {
+func (m *Monitor) HandleMemberLeft(uc *UpdateContext) error {
 	uc.L().Infof("User %s (%d) left the chat %d", uc.Sender().Username, uc.Sender().ID, uc.Chat().ID)
 	if err := uc.Bot().Delete(uc.Message()); err != nil {
 		return fmt.Errorf("deleting message: %w", err)
