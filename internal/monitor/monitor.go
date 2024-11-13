@@ -126,15 +126,17 @@ func (m *Monitor) HandleUserJoined(uc *UpdateContext) error {
 		}
 
 		greeting := fmt.Sprintf(
-			`Welcome to the chat, %s! Please, press the button below to log in with https://ctftime.org. 
-			You won't be able to send messages until you do so. 
-			The bot will kick you in %v if you don't login.`,
+			"Welcome to the chat, [%s](tg://user?id=%d)! "+
+				"Please, press the button below to log in with [CTFTime](https://ctftime.org). "+
+				"You won't be able to send messages until you do so. "+
+				"The bot will kick you in %d minutes if you don't login.",
 			name,
-			m.config.JoinLoginTimeout,
+			uc.Sender().ID,
+			m.config.JoinLoginTimeout/time.Minute,
 		)
 		markup := &telebot.ReplyMarkup{}
 		markup.Inline(markup.Row(markup.URL("Log in with CTFTime", url)))
-		msg, err := uc.Bot().Send(uc.Chat(), greeting, markup)
+		msg, err := uc.Bot().Send(uc.Chat(), greeting, markup, telebot.ModeMarkdownV2)
 		if err != nil {
 			return fmt.Errorf("sending welcome message: %w", err)
 		}
