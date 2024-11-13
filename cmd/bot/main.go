@@ -12,6 +12,7 @@ import (
 	"github.com/C4T-BuT-S4D/shpaga/internal/monitor"
 	"github.com/C4T-BuT-S4D/shpaga/internal/storage"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	"gopkg.in/telebot.v4"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -83,6 +84,7 @@ func main() {
 }
 
 func setupConfig() {
-
+	viper.SetDefault("bot_handle_timeout", "10s")
+	viper.SetDefault("join_login_timeout", "10m")
 	config.SetupCommon()
 }
