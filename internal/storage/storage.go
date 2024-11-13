@@ -73,6 +73,18 @@ func (s *Storage) GetUser(ctx context.Context, userID string) (*models.User, err
 	return &user, nil
 }
 
+func (s *Storage) GetChatUser(ctx context.Context, chatID, telegramID int64) (*models.User, error) {
+	var user models.User
+	if err := s.
+		getDB(ctx).
+		Where("chat_id = ? AND telegram_id = ?", chatID, telegramID).
+		First(&user).
+		Error; err != nil {
+		return nil, fmt.Errorf("getting user: %w", err)
+	}
+	return &user, nil
+}
+
 func (s *Storage) GetOrCreateUser(ctx context.Context, chatID, telegramID int64, defaultStatus models.UserStatus) (*models.User, error) {
 	userToCreate := &models.User{
 		ID:         uuid.New().String(),

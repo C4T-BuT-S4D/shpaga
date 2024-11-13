@@ -1,14 +1,11 @@
 package api
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/C4T-BuT-S4D/shpaga/internal/authutil"
 	"github.com/C4T-BuT-S4D/shpaga/internal/config"
-	"github.com/C4T-BuT-S4D/shpaga/internal/models"
 	"github.com/C4T-BuT-S4D/shpaga/internal/storage"
 	"github.com/go-resty/resty/v2"
 	"github.com/labstack/echo/v4"
@@ -56,6 +53,12 @@ func (s *Service) HandleOAuthCallback() echo.HandlerFunc {
 			"user_id": state.UserID,
 		})
 
+		user, err := s.storage.GetUser(c.Request().Context(), state.UserID)
+		if err != nil {
+			logger.WithError(err).Error("failed to get user")
+			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to get user"})
+		}
+
 		logger.Info("received oauth callback")
 
 		token, err := s.getOAuthToken(code)
@@ -82,8 +85,11 @@ func (s *Service) HandleOAuthCallback() echo.HandlerFunc {
 
 		logger.Info("successfully set oauth token")
 
-		if err := s.removeGreetings(c.Request().Context(), state); err != nil {
-			logger.WithError(err).Error("failed to remove greetings")
+		if _, err := s.bot.Send(
+			&telebot.User{ID: user.TelegramID},
+			"Successfully logged in, you can use the chat now.",
+		); err != nil {
+			logger.WithError(err).Error("failed to send success message")
 		}
 
 		return c.String(http.StatusOK, "Successfully authorized, you can close this page.")
@@ -134,20 +140,4 @@ func (s *Service) getUser(token string) (int64, error) {
 	}
 
 	return resp.Result().(*oauthUserResponse).ID, nil
-}
-
-func (s *Service) removeGreetings(ctx context.Context, state *authutil.State) error {
-	msgs, err := s.storage.GetMessagesForUser(ctx, state.UserID, state.ChatID, models.MessageTypeGreeting)
-	if err != nil {
-		return fmt.Errorf("getting messages: %w", err)
-	}
-
-	var finalErr error
-	for _, msg := range msgs {
-		if err := s.bot.Delete(msg); err != nil {
-			finalErr = errors.Join(finalErr, fmt.Errorf("removing message %v", msg))
-		}
-	}
-
-	return nil
 }

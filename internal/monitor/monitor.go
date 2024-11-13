@@ -3,7 +3,9 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/C4T-BuT-S4D/shpaga/internal/authutil"
@@ -13,6 +15,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/telebot.v4"
 )
+
+var allowedChatTypes = []telebot.ChatType{
+	telebot.ChatGroup,
+	telebot.ChatSuperGroup,
+	telebot.ChatPrivate,
+}
 
 type Monitor struct {
 	config  *config.Config
@@ -45,17 +53,21 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		uc.L().Errorf("failed to update last update: %v", err)
 	}
 
-	if c.Chat().Type != telebot.ChatGroup && c.Chat().Type != telebot.ChatSuperGroup {
-		uc.L().Debugf("ignoring update from non-group chat %d", c.Chat().ID)
-		return nil
-	}
-
 	if c.Message() == nil {
 		uc.L().Debugf("ignoring update without message")
 		return nil
 	}
 
+	if !slices.Contains(allowedChatTypes, c.Chat().Type) {
+		uc.L().Debugf("ignoring update from chat %d (type %v)", c.Chat().ID, c.Chat().Type)
+		return nil
+	}
+
 	switch {
+	case c.Chat().Type == telebot.ChatPrivate:
+		if err := m.HandlePrivateMessage(uc); err != nil {
+			uc.L().Errorf("failed to handle private message: %v", err)
+		}
 	case c.Message().UserJoined != nil:
 		if err := m.HandleUserJoined(uc); err != nil {
 			uc.L().Errorf("failed to handle user joined: %v", err)
@@ -65,7 +77,7 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 			uc.L().Errorf("failed to handle chat left: %v", err)
 		}
 	default:
-		if err := m.HandleMessage(uc); err != nil {
+		if err := m.HandleChatMessage(uc); err != nil {
 			uc.L().Errorf("failed to handle message: %v", err)
 		}
 	}
@@ -73,7 +85,7 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 	return nil
 }
 
-func (m *Monitor) HandleMessage(uc *UpdateContext) error {
+func (m *Monitor) HandleChatMessage(uc *UpdateContext) error {
 	user, err := m.storage.GetOrCreateUser(uc, uc.TC().Chat().ID, uc.TC().Sender().ID, models.UserStatusActive)
 	if err != nil {
 		return fmt.Errorf("failed to get or create user: %w", err)
@@ -120,11 +132,6 @@ func (m *Monitor) HandleUserJoined(uc *UpdateContext) error {
 	case models.UserStatusJustJoined:
 		uc.L().Infof("User %d is just joined, sending welcome message", user.TelegramID)
 
-		url, err := authutil.GetCTFTimeOAuthURL(user.ID, uc.Chat().ID, m.config)
-		if err != nil {
-			return fmt.Errorf("failed to get oauth url: %w", err)
-		}
-
 		name := ""
 		if uc.Sender().FirstName != "" || uc.Sender().LastName != "" {
 			name = fmt.Sprintf("%s %s", uc.Sender().FirstName, uc.Sender().LastName)
@@ -132,9 +139,13 @@ func (m *Monitor) HandleUserJoined(uc *UpdateContext) error {
 			name = uc.Sender().Username
 		}
 
+		botName := uc.Bot().(*telebot.Bot).Me.Username
+		url := fmt.Sprintf("t.me/%s?start=%d", botName, user.ChatID)
+
 		greeting := fmt.Sprintf(
 			`Welcome to the chat, [%s](tg://user?id=%d)\! `+
-				`Please, press the button below to log in with [CTFTime](https://ctftime.org)\. `+
+				`Please, press the button below, start the bot and follow the instructions `+
+				`to log in with [CTFTime](https://ctftime.org)\. `+
 				`You won't be able to send messages until you do so\. `+
 				`The bot will kick you in %d minutes if you don't login\.`,
 			name,
@@ -176,6 +187,69 @@ func (m *Monitor) HandleChatLeft(uc *UpdateContext) error {
 	if err := uc.Bot().Delete(uc.Message()); err != nil {
 		return fmt.Errorf("deleting message: %w", err)
 	}
+	return nil
+}
+
+func (m *Monitor) HandlePrivateMessage(uc *UpdateContext) error {
+	uc.L().Infof(
+		"User %s (%d) sent private message %v",
+		uc.Sender().Username,
+		uc.Sender().ID,
+		uc.Message().Text,
+	)
+
+	tokens := strings.Fields(uc.Message().Text)
+	if len(tokens) < 2 || tokens[0] != "/start" {
+		uc.L().Infof("Ignoring non-start message %v", uc.Message().Text)
+		return nil
+	}
+
+	chatID, err := strconv.ParseInt(tokens[1], 10, 64)
+	if err != nil {
+		uc.L().Errorf("failed to parse chat id: %v", err)
+		if err := uc.TC().Send("Invalid chat id"); err != nil {
+			uc.L().Errorf("failed to send message: %v", err)
+		}
+		return nil
+	}
+
+	user, err := m.storage.GetChatUser(uc, chatID, uc.Sender().ID)
+	if err != nil {
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user.Status != models.UserStatusJustJoined {
+		uc.L().Warnf("User status is %v, ignoring", user.Status)
+		if err := uc.TC().Send(fmt.Sprintf("You have an unexpected status %v", user.Status)); err != nil {
+			uc.L().Errorf("failed to send message: %v", err)
+		}
+		return nil
+	}
+
+	url, err := authutil.GetCTFTimeOAuthURL(user.ID, user.ChatID, m.config)
+	if err != nil {
+		return fmt.Errorf("getting oauth url: %w", err)
+	}
+
+	text := "Follow the link below to log in with CTFTime"
+	markup := &telebot.ReplyMarkup{}
+	markup.Inline(markup.Row(markup.URL("Log in with CTFTime", url)))
+
+	if err := uc.TC().Send(text, markup); err != nil {
+		return fmt.Errorf("sending login message: %w", err)
+	}
+
+	greetings, err := m.storage.GetMessagesForUser(uc, user.ID, user.ChatID, models.MessageTypeGreeting)
+	if err != nil {
+		return fmt.Errorf("getting greetings: %w", err)
+	}
+
+	for _, msg := range greetings {
+		if err := m.bot.Delete(msg); err != nil {
+			uc.L().Errorf("failed to delete greeting message %v: %v", msg, err)
+		}
+	}
+
 	return nil
 }
 
