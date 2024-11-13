@@ -50,9 +50,13 @@ func main() {
 	bot, err := telebot.NewBot(telebot.Settings{
 		Token: cfg.TelegramToken,
 		Poller: &telebot.LongPoller{
-			Timeout:        10 * time.Second,
-			LastUpdateID:   globalState.LastUpdateID,
-			AllowedUpdates: []string{"message"},
+			Timeout:      10 * time.Second,
+			LastUpdateID: globalState.LastUpdateID,
+			AllowedUpdates: []string{
+				"message",
+				"chat_member",
+				"my_chat_member",
+			},
 		},
 	})
 	if err != nil {
