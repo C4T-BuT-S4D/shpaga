@@ -126,10 +126,10 @@ func (m *Monitor) HandleUserJoined(uc *UpdateContext) error {
 		}
 
 		greeting := fmt.Sprintf(
-			"Welcome to the chat, [%s](tg://user?id=%d)! "+
-				"Please, press the button below to log in with [CTFTime](https://ctftime.org). "+
-				"You won't be able to send messages until you do so. "+
-				"The bot will kick you in %d minutes if you don't login.",
+			`Welcome to the chat, [%s](tg://user?id=%d)\! `+
+				`Please, press the button below to log in with [CTFTime](https://ctftime.org)\. `+
+				`You won't be able to send messages until you do so\. `+
+				`The bot will kick you in %d minutes if you don't login\.`,
 			name,
 			uc.Sender().ID,
 			m.config.JoinLoginTimeout/time.Minute,

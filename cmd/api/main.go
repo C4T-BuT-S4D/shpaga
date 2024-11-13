@@ -42,14 +42,14 @@ func main() {
 		logrus.Fatalf("failed to connect to database: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	ctx, cancel = signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
+	initCtx, initCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer initCancel()
 
 	store := storage.New(db)
-	if err := store.Migrate(ctx); err != nil {
+	if err := store.Migrate(initCtx); err != nil {
 		logrus.Fatalf("failed to migrate database: %v", err)
 	}
 
@@ -57,8 +57,20 @@ func main() {
 	e := echo.New()
 	e.GET("/oauth_callback", service.HandleOAuthCallback())
 
-	if err := e.Start(":8080"); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logrus.Fatalf("failed to start server: %v", err)
+	go func() {
+		if err := e.Start(":8080"); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logrus.Fatalf("failed to start server: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	logrus.Info("shutting down server")
+	if err := e.Shutdown(shutdownCtx); err != nil {
+		logrus.Errorf("failed to shutdown server: %v", err)
 	}
 }
 
