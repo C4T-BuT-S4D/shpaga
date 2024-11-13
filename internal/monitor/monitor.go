@@ -189,8 +189,6 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 		uc.L().Warnf("User %d has unexpected status %v, skipping validation", user.TelegramID, user.Status)
 		return nil
 	}
-
-	return nil
 }
 
 func (m *Monitor) HandleMemberLeft(uc *UpdateContext) error {
