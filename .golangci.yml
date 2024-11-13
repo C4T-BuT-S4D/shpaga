@@ -1,0 +1,70 @@
+---
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  tests: true
+
+linters:
+  enable:
+  - asasalint
+  - asciicheck
+  - bodyclose
+  - copyloopvar
+  - depguard
+  - dogsled
+  - durationcheck
+  - errcheck
+  - errname
+  - exhaustive
+  - fatcontext
+  - gocheckcompilerdirectives
+  - gochecksumtype
+  - gocritic
+  - gofmt
+  - goimports
+  - gomoddirectives
+  - gosimple
+  - govet
+  - ineffassign
+  - importas
+  - intrange
+  - misspell
+  - noctx
+  - prealloc
+  - predeclared
+  - reassign
+  - revive
+  - rowserrcheck
+  - sqlclosecheck
+  - staticcheck
+  - tenv
+  - testifylint
+  - thelper
+  - tparallel
+  - unconvert
+  - unparam
+  - unused
+  - usestdlibvars
+  - whitespace
+  - wrapcheck
+
+linters-settings:
+  wrapcheck:
+    ignoreSigs:
+    - errors.New
+    - errors.Join
+    - (context.Context).Err()
+    - .Read(p []byte) (n int, err error)  # most Read errors should be passed as-is, e.g. io.EOF.
+    - .Read(b []byte) (n int, err error)
+    - .Write(p []byte) (n int, err error)
+    - os.Chmod
+  dogsled:
+    max-blank-identifiers: 4
+  exhaustive:
+    default-signifies-exhaustive: true
+  testifylint:
+    enable-all: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
