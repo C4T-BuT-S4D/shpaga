@@ -1,16 +1,20 @@
 package config
 
 import (
+	"time"
+
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	TelegramToken       string `mapstructure:"telegram_token"`
-	CTFTimeClientID     string `mapstructure:"ctftime_client_id"`
-	CTFTimeClientSecret string `mapstructure:"ctftime_client_secret"`
-	CTFTimeOAuthHost    string `mapstructure:"ctftime_oauth_host"`
-	CTFTimeRedirectURL  string `mapstructure:"ctftime_redirect_url"`
+	TelegramToken       string        `mapstructure:"telegram_token"`
+	BotHandleTimeout    time.Duration `mapstructure:"bot_handle_timeout"`
+	JoinLoginTimeout    time.Duration `mapstructure:"join_login_timeout"`
+	CTFTimeClientID     string        `mapstructure:"ctftime_client_id"`
+	CTFTimeClientSecret string        `mapstructure:"ctftime_client_secret"`
+	CTFTimeOAuthHost    string        `mapstructure:"ctftime_oauth_host"`
+	CTFTimeRedirectURL  string        `mapstructure:"ctftime_redirect_url"`
 
 	PostgresDSN string `mapstructure:"postgres_dsn"`
 }

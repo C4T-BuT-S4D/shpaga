@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/C4T-BuT-S4D/shpaga/internal/api"
@@ -37,8 +40,14 @@ func main() {
 		logrus.Fatalf("Failed to connect to database: %v", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	ctx, cancel = signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
 	store := storage.New(db)
-	if err := store.Migrate(); err != nil {
+	if err := store.Migrate(ctx); err != nil {
 		logrus.Fatalf("Failed to migrate database: %v", err)
 	}
 

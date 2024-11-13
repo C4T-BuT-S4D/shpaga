@@ -19,8 +19,8 @@ func New(db *gorm.DB) *Storage {
 	return &Storage{db: db}
 }
 
-func (s *Storage) Migrate() error {
-	if err := s.db.AutoMigrate(&models.User{}, &models.Message{}); err != nil {
+func (s *Storage) Migrate(ctx context.Context) error {
+	if err := s.getDB(ctx).AutoMigrate(&models.User{}, &models.Message{}); err != nil {
 		return fmt.Errorf("migrating database: %w", err)
 	}
 	return nil
@@ -28,7 +28,7 @@ func (s *Storage) Migrate() error {
 
 func (s *Storage) GetUser(ctx context.Context, userID string) (*models.User, error) {
 	var user models.User
-	if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
+	if err := s.getDB(ctx).Where("id = ?", userID).First(&user).Error; err != nil {
 		return nil, fmt.Errorf("getting user: %w", err)
 	}
 	return &user, nil
@@ -43,7 +43,15 @@ func (s *Storage) GetOrCreateUser(ctx context.Context, chatID, telegramID int64,
 	}
 
 	var user models.User
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.getDB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Optimistic check if user exists
+		if err := tx.
+			Where("chat_id = ? AND telegram_id = ?", chatID, telegramID).
+			First(&user).
+			Error; err == nil {
+			return nil
+		}
+
 		if err := tx.
 			Clauses(clause.OnConflict{
 				Columns: []clause.Column{
@@ -73,9 +81,8 @@ func (s *Storage) GetOrCreateUser(ctx context.Context, chatID, telegramID int64,
 }
 
 func (s *Storage) OnUserAuthorized(ctx context.Context, userID string, ctftimeUserID int64) error {
-	if err := s.db.
-		WithContext(ctx).
-		Debug().
+	if err := s.
+		getDB(ctx).
 		Model(&models.User{}).
 		Where("id = ?", userID).
 		Updates(map[string]any{
@@ -90,9 +97,8 @@ func (s *Storage) OnUserAuthorized(ctx context.Context, userID string, ctftimeUs
 }
 
 func (s *Storage) OnUserKicked(ctx context.Context, userID string) error {
-	if err := s.db.
-		WithContext(ctx).
-		Debug().
+	if err := s.
+		getDB(ctx).
 		Model(&models.User{}).
 		Where("id = ?", userID).
 		Updates(map[string]any{
@@ -106,9 +112,8 @@ func (s *Storage) OnUserKicked(ctx context.Context, userID string) error {
 }
 
 func (s *Storage) SetUserStatus(ctx context.Context, userID string, status models.UserStatus) error {
-	if err := s.db.
-		WithContext(ctx).
-		Debug().
+	if err := s.
+		getDB(ctx).
 		Model(&models.User{}).
 		Where("id = ?", userID).
 		Updates(map[string]any{
@@ -122,7 +127,7 @@ func (s *Storage) SetUserStatus(ctx context.Context, userID string, status model
 }
 
 func (s *Storage) AddMessage(ctx context.Context, msg *models.Message) error {
-	if err := s.db.Create(msg).Error; err != nil {
+	if err := s.getDB(ctx).Create(msg).Error; err != nil {
 		return fmt.Errorf("creating message: %w", err)
 	}
 	return nil
@@ -135,8 +140,8 @@ func (s *Storage) GetMessagesForUser(
 	messageType models.MessageType,
 ) ([]*models.Message, error) {
 	var result []*models.Message
-	if err := s.db.
-		WithContext(ctx).
+	if err := s.
+		getDB(ctx).
 		Where(
 			"associated_user_id = ? AND chat_id = ? AND message_type = ?",
 			userID,
@@ -154,8 +159,8 @@ func (s *Storage) GetMessagesForUser(
 
 func (s *Storage) GetMessagesOlderThan(ctx context.Context, olderThan time.Time) ([]*models.Message, error) {
 	var result []*models.Message
-	if err := s.db.
-		WithContext(ctx).
+	if err := s.
+		getDB(ctx).
 		Where("created_at < ?", olderThan).
 		Limit(100).
 		Find(&result).
@@ -166,8 +171,12 @@ func (s *Storage) GetMessagesOlderThan(ctx context.Context, olderThan time.Time)
 }
 
 func (s *Storage) DeleteMessages(ctx context.Context, messages []*models.Message) error {
-	if err := s.db.WithContext(ctx).Delete(messages).Error; err != nil {
+	if err := s.getDB(ctx).Delete(messages).Error; err != nil {
 		return fmt.Errorf("deleting messages: %w", err)
 	}
 	return nil
+}
+
+func (s *Storage) getDB(ctx context.Context) *gorm.DB {
+	return s.db.WithContext(ctx)
 }

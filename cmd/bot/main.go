@@ -40,18 +40,26 @@ func main() {
 	}
 
 	store := storage.New(db)
-	if err := store.Migrate(); err != nil {
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
+	migrateCtx, migrateCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer migrateCancel()
+
+	if err := store.Migrate(migrateCtx); err != nil {
 		logrus.Fatalf("Failed to migrate database: %v", err)
 	}
 
 	mon := monitor.New(cfg, store, bot)
 
-	bot.Handle(telebot.OnText, mon.HandleMessage)
-	bot.Handle(telebot.OnUserJoined, mon.HandleUserJoined)
-	bot.Handle(telebot.OnUserLeft, mon.HandleChatLeft)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer cancel()
+	for _, updateType := range []string{
+		telebot.OnText,
+		telebot.OnUserJoined,
+		telebot.OnUserLeft,
+	} {
+		bot.Handle(updateType, mon.HandleAnyUpdate)
+	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -75,5 +83,6 @@ func main() {
 }
 
 func setupConfig() {
+
 	config.SetupCommon()
 }

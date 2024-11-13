@@ -47,7 +47,7 @@ func (s *Service) HandleOAuthCallback() echo.HandlerFunc {
 
 		state, err := authutil.StateFromString(stateRaw)
 		if err != nil {
-			logrus.Error("failed to unmarshal state: %v", err)
+			logrus.Errorf("failed to unmarshal state: %v", err)
 			return c.JSON(http.StatusBadRequest, echo.Map{"error": "failed to unmarshal state"})
 		}
 
