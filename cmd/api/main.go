@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
@@ -32,12 +34,12 @@ func main() {
 		},
 	})
 	if err != nil {
-		logrus.Fatalf("Failed to create bot: %v", err)
+		logrus.Fatalf("failed to create bot: %v", err)
 	}
 
 	db, err := gorm.Open(postgres.Open(cfg.PostgresDSN), &gorm.Config{})
 	if err != nil {
-		logrus.Fatalf("Failed to connect to database: %v", err)
+		logrus.Fatalf("failed to connect to database: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -48,16 +50,19 @@ func main() {
 
 	store := storage.New(db)
 	if err := store.Migrate(ctx); err != nil {
-		logrus.Fatalf("Failed to migrate database: %v", err)
+		logrus.Fatalf("failed to migrate database: %v", err)
 	}
 
 	service := api.NewService(cfg, store, bot)
 	e := echo.New()
 	e.GET("/oauth_callback", service.HandleOAuthCallback())
-	e.Start(":8080")
+
+	if err := e.Start(":8080"); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		logrus.Fatalf("failed to start server: %v", err)
+	}
 }
 
 func setupConfig() {
-	viper.BindEnv("ctftime_client_secret")
+	viper.MustBindEnv("ctftime_client_secret")
 	config.SetupCommon()
 }

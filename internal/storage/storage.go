@@ -20,8 +20,47 @@ func New(db *gorm.DB) *Storage {
 }
 
 func (s *Storage) Migrate(ctx context.Context) error {
-	if err := s.getDB(ctx).AutoMigrate(&models.User{}, &models.Message{}); err != nil {
+	if err := s.getDB(ctx).AutoMigrate(&models.GlobalState{}, &models.User{}, &models.Message{}); err != nil {
 		return fmt.Errorf("migrating database: %w", err)
+	}
+	return nil
+}
+
+func (s *Storage) GetOrCreateGlobalState(ctx context.Context) (*models.GlobalState, error) {
+	var res models.GlobalState
+	if err := s.getDB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Optimistic check if global state exists
+		if err := tx.First(&res).Error; err == nil {
+			return nil
+		}
+
+		if err := tx.
+			Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&models.GlobalState{ID: 1}).
+			Error; err != nil {
+			return fmt.Errorf("creating global state: %w", err)
+		}
+
+		if err := tx.First(&res).Error; err != nil {
+			return fmt.Errorf("getting global state: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("in tx: %w", err)
+	}
+
+	return &res, nil
+}
+
+func (s *Storage) UpdateLastUpdate(ctx context.Context, updateID int) error {
+	if err := s.
+		getDB(ctx).
+		Model(&models.GlobalState{}).
+		Where("id = 1").
+		Update("last_update_id", updateID).
+		Error; err != nil {
+		return fmt.Errorf("updating last update: %w", err)
 	}
 	return nil
 }

@@ -25,16 +25,6 @@ func main() {
 	cfg := config.New()
 	logrus.Debugf("config: %+v", cfg)
 
-	bot, err := telebot.NewBot(telebot.Settings{
-		Token: cfg.TelegramToken,
-		Poller: &telebot.LongPoller{
-			Timeout: 10 * time.Second,
-		},
-	})
-	if err != nil {
-		logrus.Fatalf("Failed to create bot: %v", err)
-	}
-
 	db, err := gorm.Open(postgres.Open(cfg.PostgresDSN), &gorm.Config{})
 	if err != nil {
 		logrus.Fatalf("Failed to connect to database: %v", err)
@@ -45,11 +35,28 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer cancel()
 
-	migrateCtx, migrateCancel := context.WithTimeout(ctx, 10*time.Second)
+	initCtx, migrateCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer migrateCancel()
 
-	if err := store.Migrate(migrateCtx); err != nil {
+	if err := store.Migrate(initCtx); err != nil {
 		logrus.Fatalf("Failed to migrate database: %v", err)
+	}
+
+	globalState, err := store.GetOrCreateGlobalState(ctx)
+	if err != nil {
+		logrus.Fatalf("Failed to get or create global state: %v", err)
+	}
+
+	bot, err := telebot.NewBot(telebot.Settings{
+		Token: cfg.TelegramToken,
+		Poller: &telebot.LongPoller{
+			Timeout:        10 * time.Second,
+			LastUpdateID:   globalState.LastUpdateID,
+			AllowedUpdates: []string{"message"},
+		},
+	})
+	if err != nil {
+		logrus.Fatalf("Failed to create bot: %v", err)
 	}
 
 	mon := monitor.New(cfg, store, bot)

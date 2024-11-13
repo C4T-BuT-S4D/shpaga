@@ -29,7 +29,14 @@ func New(cfg *config.Config, storage *storage.Storage, bot telebot.API) *Monitor
 }
 
 func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
-	uc := NewUpdateContext(context.Background(), c)
+	ctx, cancel := context.WithTimeout(context.Background(), m.config.BotHandleTimeout)
+	defer cancel()
+
+	uc := NewUpdateContext(ctx, c)
+
+	if err := m.storage.UpdateLastUpdate(uc, c.Update().ID); err != nil {
+		uc.L().Errorf("failed to update last update: %v", err)
+	}
 
 	if c.Chat().Type != telebot.ChatGroup && c.Chat().Type != telebot.ChatSuperGroup {
 		uc.L().Debugf("ignoring update from non-group chat %d", c.Chat().ID)
@@ -40,10 +47,6 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		uc.L().Debugf("ignoring update without message")
 		return nil
 	}
-
-	var cancel context.CancelFunc
-	uc, cancel = uc.WithTimeout(m.config.BotHandleTimeout)
-	defer cancel()
 
 	switch {
 	case c.Message().UserJoined != nil:
@@ -64,7 +67,6 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 }
 
 func (m *Monitor) HandleMessage(uc *UpdateContext) error {
-
 	user, err := m.storage.GetOrCreateUser(uc, uc.TC().Chat().ID, uc.TC().Sender().ID, models.UserStatusActive)
 	if err != nil {
 		return fmt.Errorf("failed to get or create user: %w", err)

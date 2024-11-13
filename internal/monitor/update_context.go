@@ -2,7 +2,6 @@ package monitor
 
 import (
 	"context"
-	"time"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/telebot.v4"
@@ -58,13 +57,4 @@ func (uc *UpdateContext) Chat() *telebot.Chat {
 
 func (uc *UpdateContext) Sender() *telebot.User {
 	return uc.tc.Sender()
-}
-
-func (uc *UpdateContext) WithTimeout(timeout time.Duration) (*UpdateContext, context.CancelFunc) {
-	ctx, cancel := context.WithTimeout(uc.Context, timeout)
-	return &UpdateContext{
-		Context: ctx,
-		tc:      uc.tc,
-		log:     uc.log,
-	}, cancel
 }
