@@ -47,37 +47,43 @@ func (s *Service) HandleOAuthCallback() echo.HandlerFunc {
 
 		state, err := authutil.StateFromString(stateRaw)
 		if err != nil {
-			logrus.Errorf("failed to unmarshal state: %v", err)
+			logrus.WithError(err).Error("failed to unmarshal state")
 			return c.JSON(http.StatusBadRequest, echo.Map{"error": "failed to unmarshal state"})
 		}
 
-		logrus.Infof("Received oauth callback for %v", state)
+		logger := logrus.WithFields(logrus.Fields{
+			"chat_id": state.ChatID,
+			"user_id": state.UserID,
+		})
+
+		logger.Info("received oauth callback")
 
 		token, err := s.getOAuthToken(code)
 		if err != nil {
-			logrus.Errorf("failed to get oauth token: %v", err)
+			logger.WithError(err).Error("failed to get oauth token")
 			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to get oauth token"})
 		}
 
-		logrus.Infof("Received oauth token for %v", state)
+		logger.Info("received oauth token")
 
 		ctftimeUserID, err := s.getUser(token)
 		if err != nil {
-			logrus.Errorf("failed to get ctftime user id: %v", err)
+			logger.WithError(err).Error("failed to get ctftime user id")
 			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to get user"})
 		}
 
-		logrus.Infof("Received ctftime user id %d for user %s in chat %d", ctftimeUserID, state.UserID, state.ChatID)
+		logger = logger.WithField("ctftime_user_id", ctftimeUserID)
+		logger.Info("resolved CTFTime user")
 
 		if err := s.storage.OnUserAuthorized(c.Request().Context(), state.UserID, ctftimeUserID); err != nil {
-			logrus.Errorf("failed to set oauth token: %v", err)
+			logger.WithError(err).Error("failed to set oauth token")
 			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to set oauth token"})
 		}
 
-		logrus.Infof("Successfully set oauth token for %v", state)
+		logger.Info("successfully set oauth token")
 
 		if err := s.removeGreetings(c.Request().Context(), state); err != nil {
-			logrus.Errorf("failed to remove greetings: %v", err)
+			logger.WithError(err).Error("failed to remove greetings")
 		}
 
 		return c.String(http.StatusOK, "Successfully authorized, you can close this page.")
@@ -121,6 +127,10 @@ func (s *Service) getUser(token string) (int64, error) {
 		Get("/user")
 	if err != nil {
 		return 0, fmt.Errorf("sending request: %w", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return 0, fmt.Errorf("unexpected status code: %d %s", resp.StatusCode(), string(resp.Body()))
 	}
 
 	return resp.Result().(*oauthUserResponse).ID, nil
