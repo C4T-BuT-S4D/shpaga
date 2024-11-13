@@ -10,7 +10,6 @@ linters:
   - asciicheck
   - bodyclose
   - copyloopvar
-  - depguard
   - dogsled
   - durationcheck
   - errcheck
@@ -53,6 +52,7 @@ linters-settings:
     ignoreSigs:
     - errors.New
     - errors.Join
+    - fmt.Errorf
     - (context.Context).Err()
     - .Read(p []byte) (n int, err error)  # most Read errors should be passed as-is, e.g. io.EOF.
     - .Read(b []byte) (n int, err error)

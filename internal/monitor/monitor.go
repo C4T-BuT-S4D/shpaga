@@ -184,6 +184,10 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 	case models.UserStatusBanned:
 		uc.L().Warnf("User %d is banned, skipping validation, please investigate", user.TelegramID)
 		return nil
+
+	default:
+		uc.L().Warnf("User %d has unexpected status %v, skipping validation", user.TelegramID, user.Status)
+		return nil
 	}
 
 	return nil

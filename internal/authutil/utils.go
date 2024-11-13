@@ -29,7 +29,7 @@ func GetCTFTimeOAuthURL(userID string, chatID int64, config *config.Config) (str
 	query.Set("redirect_uri", config.CTFTimeRedirectURL)
 	query.Set("scope", "profile:read")
 	query.Set("response_type", "code")
-	query.Set("state", string(state))
+	query.Set("state", state)
 
 	oauthURL.RawQuery = query.Encode()
 
@@ -67,5 +67,5 @@ func StateFromString(s string) (*State, error) {
 		return nil, fmt.Errorf("unmarshalling json: %w", err)
 	}
 
-	return &state, err
+	return &state, nil
 }
