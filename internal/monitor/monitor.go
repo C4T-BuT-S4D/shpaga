@@ -71,6 +71,16 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		return nil
 	}
 
+	chatMemberJoined := c.ChatMember() != nil &&
+		c.ChatMember().NewChatMember != nil &&
+		c.ChatMember().NewChatMember.Role == telebot.Member &&
+		(c.ChatMember().OldChatMember == nil || c.ChatMember().OldChatMember.Role == telebot.Member)
+
+	chatMemberLeft := c.ChatMember() != nil &&
+		c.ChatMember().OldChatMember != nil &&
+		c.ChatMember().OldChatMember.Role == telebot.Member &&
+		(c.ChatMember().NewChatMember == nil || c.ChatMember().NewChatMember.Role == telebot.Left)
+
 	switch {
 	case c.Chat().Type == telebot.ChatPrivate:
 		if err := m.HandlePrivateMessage(uc); err != nil {
@@ -84,11 +94,11 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		if err := m.HandleMemberLeft(uc); err != nil {
 			uc.L().Errorf("failed to handle chat left: %v", err)
 		}
-	case c.ChatMember() != nil && c.ChatMember().OldChatMember != nil && c.ChatMember().OldChatMember.Member:
+	case chatMemberLeft:
 		if err := m.HandleMemberLeft(uc); err != nil {
 			uc.L().Errorf("failed to handle chat member left: %v", err)
 		}
-	case c.ChatMember() != nil && c.ChatMember().NewChatMember != nil && c.ChatMember().NewChatMember.Member:
+	case chatMemberJoined:
 		if err := m.HandleNewMember(uc); err != nil {
 			uc.L().Errorf("failed to handle chat member join: %v", err)
 		}
