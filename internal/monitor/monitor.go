@@ -74,7 +74,7 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 	chatMemberJoined := c.ChatMember() != nil &&
 		c.ChatMember().NewChatMember != nil &&
 		c.ChatMember().NewChatMember.Role == telebot.Member &&
-		(c.ChatMember().OldChatMember == nil || c.ChatMember().OldChatMember.Role == telebot.Member)
+		(c.ChatMember().OldChatMember == nil || c.ChatMember().OldChatMember.Role == telebot.Left)
 
 	chatMemberLeft := c.ChatMember() != nil &&
 		c.ChatMember().OldChatMember != nil &&
