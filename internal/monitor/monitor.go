@@ -42,13 +42,16 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 
 	uc := NewUpdateContext(ctx, c)
 
-	uc.L().Debugf(
-		"Received update message=%v, user_joined=%v, user_left=%v, chat_member=%v",
-		c.Message(),
-		c.Message().UserJoined,
-		c.Message().UserLeft,
-		c.ChatMember(),
-	)
+	if c.Message() != nil {
+		uc.L().Debugf(
+			"received message update: message=%v, user_joined=%v, user_left=%v",
+			c.Message(),
+			c.Message().UserJoined,
+			c.Message().UserLeft,
+		)
+	} else {
+		uc.L().Debugf("received non-message update: chat_member=%v", c.ChatMember())
+	}
 
 	if err := m.storage.UpdateLastUpdate(uc, c.Update().ID); err != nil {
 		uc.L().Errorf("failed to update last update: %v", err)
