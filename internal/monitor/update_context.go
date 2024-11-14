@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 
+	"github.com/C4T-BuT-S4D/shpaga/internal/models"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/telebot.v4"
 )
@@ -15,17 +16,17 @@ type UpdateContext struct {
 
 func NewUpdateContext(c context.Context, tc telebot.Context) *UpdateContext {
 	fields := logrus.Fields{
-		"update_id": tc.Update().ID,
+		"update.id": tc.Update().ID,
 	}
 	if tc.Chat() != nil {
-		fields["chat_id"] = tc.Chat().ID
-		fields["chat_type"] = tc.Chat().Type
+		fields["chat.id"] = tc.Chat().ID
+		fields["chat.type"] = tc.Chat().Type
 	}
 	if tc.Sender() != nil {
-		fields["sender_id"] = tc.Sender().ID
-		fields["sender_username"] = tc.Sender().Username
-		fields["sender_first_name"] = tc.Sender().FirstName
-		fields["sender_last_name"] = tc.Sender().LastName
+		fields["sender.id"] = tc.Sender().ID
+		fields["sender.username"] = tc.Sender().Username
+		fields["sender.first_name"] = tc.Sender().FirstName
+		fields["sender.last_name"] = tc.Sender().LastName
 	}
 
 	return &UpdateContext{
@@ -37,6 +38,15 @@ func NewUpdateContext(c context.Context, tc telebot.Context) *UpdateContext {
 
 func (uc *UpdateContext) L() *logrus.Entry {
 	return uc.log
+}
+
+func (uc *UpdateContext) SetLoggerUser(user *models.User) {
+	uc.log = uc.log.WithFields(logrus.Fields{
+		"user.id":          user.ID,
+		"user.telegram_id": user.TelegramID,
+		"user.ctftime_id":  user.CTFTimeUserID,
+		"user.status":      user.Status,
+	})
 }
 
 func (uc *UpdateContext) TC() telebot.Context {

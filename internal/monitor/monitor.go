@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -42,28 +43,31 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 
 	uc := NewUpdateContext(ctx, c)
 
-	if c.Message() != nil {
+	if err := m.storage.UpdateLastUpdate(uc, c.Update().ID); err != nil {
+		uc.L().Errorf("failed to update last update: %v", err)
+	}
+
+	switch {
+	case c.Message() != nil:
 		uc.L().Debugf(
 			"received message update: message=%v, user_joined=%v, user_left=%v",
 			c.Message(),
 			c.Message().UserJoined,
 			c.Message().UserLeft,
 		)
-	} else {
-		uc.L().Debugf("received non-message update: chat_member=%v", c.ChatMember())
-	}
-
-	if err := m.storage.UpdateLastUpdate(uc, c.Update().ID); err != nil {
-		uc.L().Errorf("failed to update last update: %v", err)
-	}
-
-	if c.Message() == nil && c.ChatMember() == nil {
-		uc.L().Debugf("ignoring update without message or chat member")
-		return nil
+	case c.ChatMember() != nil:
+		uc.L().Debugf(
+			"received chat member update: chat_member=%v, old_chat_member=%v, new_chat_member=%v",
+			c.ChatMember(),
+			c.ChatMember().OldChatMember,
+			c.ChatMember().NewChatMember,
+		)
+	default:
+		uc.L().Warnf("received unknown update %+v", c.Update())
 	}
 
 	if !slices.Contains(allowedChatTypes, c.Chat().Type) {
-		uc.L().Debugf("ignoring update from chat %d (type %v)", c.Chat().ID, c.Chat().Type)
+		uc.L().Debugf("ignoring update from unknown chat type")
 		return nil
 	}
 
@@ -80,9 +84,13 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		if err := m.HandleMemberLeft(uc); err != nil {
 			uc.L().Errorf("failed to handle chat left: %v", err)
 		}
-	case c.ChatMember() != nil:
+	case c.ChatMember() != nil && c.ChatMember().OldChatMember != nil && c.ChatMember().OldChatMember.Member:
+		if err := m.HandleMemberLeft(uc); err != nil {
+			uc.L().Errorf("failed to handle chat member left: %v", err)
+		}
+	case c.ChatMember() != nil && c.ChatMember().NewChatMember != nil && c.ChatMember().NewChatMember.Member:
 		if err := m.HandleNewMember(uc); err != nil {
-			uc.L().Errorf("failed to handle chat member update: %v", err)
+			uc.L().Errorf("failed to handle chat member join: %v", err)
 		}
 	default:
 		if err := m.HandleChatMessage(uc); err != nil {
@@ -99,10 +107,12 @@ func (m *Monitor) HandleChatMessage(uc *UpdateContext) error {
 		return fmt.Errorf("failed to get or create user: %w", err)
 	}
 
-	uc.L().Infof("User %d sent message to chat %d", user.TelegramID, uc.Chat().ID)
+	uc.SetLoggerUser(user)
+
+	uc.L().Info("user sent message to chat")
 
 	if user.Status == models.UserStatusJustJoined || user.Status == models.UserStatusKicked {
-		uc.L().Infof("User %d is just joined, removing message until user logs in", user.TelegramID)
+		uc.L().Info("user just joined, removing message until user logs in")
 		if err := uc.Bot().Delete(uc.Message()); err != nil {
 			uc.L().Warnf("failed to delete message: %v", err)
 		}
@@ -113,14 +123,14 @@ func (m *Monitor) HandleChatMessage(uc *UpdateContext) error {
 
 func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 	if uc.Sender().IsBot {
-		uc.L().Infof("bot %s (%d) joined the chat %d, ignoring", uc.Sender().Username, uc.Sender().ID, uc.Chat().ID)
+		uc.L().Info("bot joined, ignoring")
 		return nil
 	}
 
-	uc.L().Infof("User %s (%d) joined the chat %d", uc.Sender().Username, uc.Sender().ID, uc.Chat().ID)
+	uc.L().Info("user joined")
 
 	if uc.Message() != nil {
-		uc.L().Infof("Deleting chat join request message")
+		uc.L().Info("deleting chat join request message")
 		if err := uc.Bot().Delete(uc.Message()); err != nil {
 			return fmt.Errorf("failed to delete chat join request: %w", err)
 		}
@@ -128,8 +138,10 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 
 	user, err := m.storage.GetOrCreateUser(uc, uc.Chat().ID, uc.Sender().ID, models.UserStatusJustJoined)
 	if err != nil {
-		return fmt.Errorf("failed to get or create user: %w", err)
+		return fmt.Errorf("get or create user: %w", err)
 	}
+
+	uc.SetLoggerUser(user)
 
 	if user.Status == models.UserStatusKicked {
 		if err := m.storage.SetUserStatus(uc, user.ID, models.UserStatusJustJoined); err != nil {
@@ -140,7 +152,7 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 
 	switch user.Status {
 	case models.UserStatusJustJoined:
-		uc.L().Infof("User %d is just joined, sending welcome message", user.TelegramID)
+		uc.L().Info("user just joined, sending welcome message")
 
 		name := ""
 		if uc.Sender().FirstName != "" || uc.Sender().LastName != "" {
@@ -181,38 +193,48 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 		return nil
 
 	case models.UserStatusActive:
-		uc.L().Infof("User %d is already logged in, skipping validation", user.TelegramID)
+		uc.L().Info("user already logged in")
 		return nil
 
 	case models.UserStatusBanned:
-		uc.L().Warnf("User %d is banned, skipping validation, please investigate", user.TelegramID)
+		uc.L().Warn("user is banned, skipping validation, please investigate")
 		return nil
 
 	default:
-		uc.L().Warnf("User %d has unexpected status %v, skipping validation", user.TelegramID, user.Status)
+		uc.L().Warnf("user has unexpected status %v, skipping validation", user.Status)
 		return nil
 	}
 }
 
 func (m *Monitor) HandleMemberLeft(uc *UpdateContext) error {
-	uc.L().Infof("User %s (%d) left the chat %d", uc.Sender().Username, uc.Sender().ID, uc.Chat().ID)
-	if err := uc.Bot().Delete(uc.Message()); err != nil {
-		return fmt.Errorf("deleting message: %w", err)
+	uc.L().Info("user left the chat")
+
+	if uc.Message() != nil {
+		if err := uc.Bot().Delete(uc.Message()); err != nil {
+			uc.L().Errorf("failed to delete message: %v", err)
+		}
 	}
+
+	user, err := m.storage.GetChatUser(uc, uc.Chat().ID, uc.Sender().ID)
+	if err != nil {
+		return fmt.Errorf("getting user: %w", err)
+	}
+
+	uc.SetLoggerUser(user)
+
+	if err := m.removeGreetingsForUser(uc, user); err != nil {
+		return fmt.Errorf("removing greetings for user: %w", err)
+	}
+
 	return nil
 }
 
 func (m *Monitor) HandlePrivateMessage(uc *UpdateContext) error {
-	uc.L().Infof(
-		"User %s (%d) sent private message %v",
-		uc.Sender().Username,
-		uc.Sender().ID,
-		uc.Message().Text,
-	)
+	uc.L().Infof("user sent private message %v", uc.Message().Text)
 
 	tokens := strings.Fields(uc.Message().Text)
 	if len(tokens) < 2 || tokens[0] != "/start" {
-		uc.L().Infof("Ignoring non-start message %v", uc.Message().Text)
+		uc.L().Infof("ignoring non-start message %v", uc.Message().Text)
 		return nil
 	}
 
@@ -230,9 +252,14 @@ func (m *Monitor) HandlePrivateMessage(uc *UpdateContext) error {
 		return fmt.Errorf("failed to get user: %w", err)
 	}
 
+	uc.SetLoggerUser(user)
+
 	if user.Status != models.UserStatusJustJoined {
-		uc.L().Warnf("User status is %v, ignoring", user.Status)
-		if err := uc.TC().Send(fmt.Sprintf("You have an unexpected status %v", user.Status)); err != nil {
+		uc.L().Warnf("user status is not just joined, ignoring")
+		if err := uc.TC().Send(
+			fmt.Sprintf("You have an unexpected status `%s`", user.Status),
+			telebot.ModeMarkdownV2,
+		); err != nil {
 			uc.L().Errorf("failed to send message: %v", err)
 		}
 		return nil
@@ -251,18 +278,27 @@ func (m *Monitor) HandlePrivateMessage(uc *UpdateContext) error {
 		return fmt.Errorf("sending login message: %w", err)
 	}
 
-	greetings, err := m.storage.GetMessagesForUser(uc, user.ID, user.ChatID, models.MessageTypeGreeting)
+	if err := m.removeGreetingsForUser(uc, user); err != nil {
+		uc.L().Errorf("failed to remove greetings for user: %v", err)
+	}
+
+	return nil
+}
+
+func (m *Monitor) removeGreetingsForUser(ctx context.Context, user *models.User) error {
+	msgs, err := m.storage.GetMessagesForUser(ctx, user.ID, user.ChatID, models.MessageTypeGreeting)
 	if err != nil {
 		return fmt.Errorf("getting greetings: %w", err)
 	}
 
-	for _, msg := range greetings {
+	var finalErr error
+	for _, msg := range msgs {
 		if err := m.bot.Delete(msg); err != nil {
-			uc.L().Errorf("failed to delete greeting message %v: %v", msg, err)
+			finalErr = errors.Join(finalErr, fmt.Errorf("deleting message %v: %w", msg, err))
 		}
 	}
 
-	return nil
+	return finalErr
 }
 
 func (m *Monitor) RunCleaner(ctx context.Context) {
