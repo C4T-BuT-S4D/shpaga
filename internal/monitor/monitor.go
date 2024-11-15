@@ -71,15 +71,17 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		return nil
 	}
 
-	chatMemberJoined := c.ChatMember() != nil &&
-		c.ChatMember().NewChatMember != nil &&
-		c.ChatMember().NewChatMember.Role == telebot.Member &&
-		(c.ChatMember().OldChatMember == nil || c.ChatMember().OldChatMember.Role == telebot.Left)
+	chatMemberJoined := false
+	chatMemberLeft := false
 
-	chatMemberLeft := c.ChatMember() != nil &&
-		c.ChatMember().OldChatMember != nil &&
-		c.ChatMember().OldChatMember.Role == telebot.Member &&
-		(c.ChatMember().NewChatMember == nil || c.ChatMember().NewChatMember.Role == telebot.Left)
+	if member := c.ChatMember(); member != nil {
+		chatMemberJoined = isLeftStatus(member.OldChatMember) && isMemberStatus(member.NewChatMember)
+		chatMemberLeft = isMemberStatus(member.OldChatMember) && isLeftStatus(member.NewChatMember)
+
+		if chatMemberJoined == chatMemberLeft {
+			uc.L().Warnf("unexpected member status, old=%v, new=%v", member.OldChatMember, member.NewChatMember)
+		}
+	}
 
 	switch {
 	case c.Chat().Type == telebot.ChatPrivate:
@@ -87,12 +89,12 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 			uc.L().Errorf("failed to handle private message: %v", err)
 		}
 	case c.Message() != nil && c.Message().UserJoined != nil:
-		if err := m.HandleNewMember(uc); err != nil {
-			uc.L().Errorf("failed to handle user joined: %v", err)
+		if err := uc.Bot().Delete(uc.Message()); err != nil {
+			uc.L().Errorf("failed to delete join message: %v", err)
 		}
 	case c.Message() != nil && c.Message().UserLeft != nil:
-		if err := m.HandleMemberLeft(uc); err != nil {
-			uc.L().Errorf("failed to handle chat left: %v", err)
+		if err := uc.Bot().Delete(uc.Message()); err != nil {
+			uc.L().Errorf("failed to delete left message: %v", err)
 		}
 	case chatMemberLeft:
 		if err := m.HandleMemberLeft(uc); err != nil {
@@ -368,4 +370,12 @@ func (m *Monitor) RunCleaner(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func isMemberStatus(member *telebot.ChatMember) bool {
+	return member != nil && member.Role == telebot.Member
+}
+
+func isLeftStatus(member *telebot.ChatMember) bool {
+	return member == nil || member.Role == telebot.Left || member.Role == telebot.Kicked
 }
