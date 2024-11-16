@@ -8,13 +8,18 @@ import (
 )
 
 type Config struct {
-	TelegramToken       string        `mapstructure:"telegram_token"`
-	BotHandleTimeout    time.Duration `mapstructure:"bot_handle_timeout"`
-	JoinLoginTimeout    time.Duration `mapstructure:"join_login_timeout"`
-	CTFTimeClientID     string        `mapstructure:"ctftime_client_id"`
-	CTFTimeClientSecret string        `mapstructure:"ctftime_client_secret"`
-	CTFTimeOAuthHost    string        `mapstructure:"ctftime_oauth_host"`
-	CTFTimeRedirectURL  string        `mapstructure:"ctftime_redirect_url"`
+	TelegramToken string `mapstructure:"telegram_token"`
+
+	BotHandleTimeout time.Duration `mapstructure:"bot_handle_timeout"`
+	JoinLoginTimeout time.Duration `mapstructure:"join_login_timeout"`
+
+	CleanerInterval    time.Duration `mapstructure:"cleaner_interval"`
+	ChatSyncerInterval time.Duration `mapstructure:"chat_syncer_interval"`
+
+	CTFTimeClientID     string `mapstructure:"ctftime_client_id"`
+	CTFTimeClientSecret string `mapstructure:"ctftime_client_secret"`
+	CTFTimeOAuthHost    string `mapstructure:"ctftime_oauth_host"`
+	CTFTimeRedirectURL  string `mapstructure:"ctftime_redirect_url"`
 
 	PostgresDSN string `mapstructure:"postgres_dsn"`
 }

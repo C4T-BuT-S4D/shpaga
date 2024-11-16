@@ -41,7 +41,13 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 	ctx, cancel := context.WithTimeout(context.Background(), m.config.BotHandleTimeout)
 	defer cancel()
 
-	uc := NewUpdateContext(ctx, c)
+	chatState, err := m.storage.GetOrCreateChatState(ctx, c.Chat().ID, c.Chat().Type)
+	if err != nil {
+		logrus.Errorf("failed to get or create chat state for update %v: %v", c.Update(), err)
+		return nil
+	}
+
+	uc := NewUpdateContext(ctx, c, chatState)
 
 	if err := m.storage.UpdateLastUpdate(uc, c.Update().ID); err != nil {
 		uc.L().Errorf("failed to update last update: %v", err)
@@ -62,8 +68,11 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 			c.ChatMember().OldChatMember,
 			c.ChatMember().NewChatMember,
 		)
+	case c.Callback() != nil:
+		uc.L().Debugf("received callback query update: callback=%v", c.Callback())
 	default:
 		uc.L().Warnf("received unknown update %+v", c.Update())
+		return nil
 	}
 
 	if !slices.Contains(allowedChatTypes, c.Chat().Type) {
@@ -74,7 +83,7 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 	chatMemberJoined := false
 	chatMemberLeft := false
 
-	if member := c.ChatMember(); member != nil {
+	if member := c.ChatMember(); member != nil && uc.ChatState().IsGroup() {
 		chatMemberJoined = isLeftStatus(member.OldChatMember) && isMemberStatus(member.NewChatMember)
 		chatMemberLeft = isMemberStatus(member.OldChatMember) && isLeftStatus(member.NewChatMember)
 
@@ -83,16 +92,24 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 		}
 	}
 
+	if uc.ChatState().IsGroup() {
+		uc.L().Debugf("bot chat member status: %v", chatState.Member)
+		if uc.ChatState().Member != nil && uc.ChatState().Member.Role != telebot.Administrator {
+			uc.L().Warnf("bot is not an admin, skipping update (role: %v)", uc.ChatState().Member.Role)
+			return nil
+		}
+	}
+
 	switch {
 	case c.Chat().Type == telebot.ChatPrivate:
 		if err := m.HandlePrivateMessage(uc); err != nil {
 			uc.L().Errorf("failed to handle private message: %v", err)
 		}
-	case c.Message() != nil && c.Message().UserJoined != nil:
+	case uc.ChatState().IsGroup() && c.Message() != nil && c.Message().UserJoined != nil:
 		if err := uc.Bot().Delete(uc.Message()); err != nil {
 			uc.L().Errorf("failed to delete join message: %v", err)
 		}
-	case c.Message() != nil && c.Message().UserLeft != nil:
+	case uc.ChatState().IsGroup() && c.Message() != nil && c.Message().UserLeft != nil:
 		if err := uc.Bot().Delete(uc.Message()); err != nil {
 			uc.L().Errorf("failed to delete left message: %v", err)
 		}
@@ -103,6 +120,14 @@ func (m *Monitor) HandleAnyUpdate(c telebot.Context) error {
 	case chatMemberJoined:
 		if err := m.HandleNewMember(uc); err != nil {
 			uc.L().Errorf("failed to handle chat member join: %v", err)
+		}
+	case uc.ChatState().IsGroup() && c.Callback() != nil && CallbackActionNewMemberAccept.DataMatches(c.Callback().Data):
+		if err := m.HandleNewMemberCallbackAction(uc, CallbackActionNewMemberAccept); err != nil {
+			uc.L().Errorf("failed to handle new member accept: %v", err)
+		}
+	case uc.ChatState().IsGroup() && c.Callback() != nil && CallbackActionNewMemberKick.DataMatches(c.Callback().Data):
+		if err := m.HandleNewMemberCallbackAction(uc, CallbackActionNewMemberKick); err != nil {
+			uc.L().Errorf("failed to handle new member kick: %v", err)
 		}
 	default:
 		if err := m.HandleChatMessage(uc); err != nil {
@@ -140,13 +165,6 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 	}
 
 	uc.L().Info("user joined")
-
-	if uc.Message() != nil {
-		uc.L().Info("deleting chat join request message")
-		if err := uc.Bot().Delete(uc.Message()); err != nil {
-			return fmt.Errorf("failed to delete chat join request: %w", err)
-		}
-	}
 
 	user, err := m.storage.GetOrCreateUser(uc, uc.Chat().ID, uc.Sender().ID, models.UserStatusJustJoined)
 	if err != nil {
@@ -187,7 +205,23 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 			m.config.JoinLoginTimeout/time.Minute,
 		)
 		markup := &telebot.ReplyMarkup{}
-		markup.Inline(markup.Row(markup.URL("Log in with CTFTime", url)))
+		markup.Inline(
+			markup.Row(
+				markup.URL("Log in with CTFTime", url),
+			),
+			markup.Row(
+				markup.Data(
+					"✅ Accept (admin only)",
+					CallbackActionNewMemberAccept.String(),
+					strconv.FormatInt(uc.Sender().ID, 10),
+				),
+				markup.Data(
+					"❌ Kick (admin only)",
+					CallbackActionNewMemberKick.String(),
+					strconv.FormatInt(uc.Sender().ID, 10),
+				),
+			),
+		)
 		msg, err := uc.Bot().Send(uc.Chat(), greeting, markup, telebot.ModeMarkdownV2)
 		if err != nil {
 			return fmt.Errorf("sending welcome message: %w", err)
@@ -220,12 +254,6 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 
 func (m *Monitor) HandleMemberLeft(uc *UpdateContext) error {
 	uc.L().Info("user left the chat")
-
-	if uc.Message() != nil {
-		if err := uc.Bot().Delete(uc.Message()); err != nil {
-			uc.L().Errorf("failed to delete message: %v", err)
-		}
-	}
 
 	user, err := m.storage.GetChatUser(uc, uc.Chat().ID, uc.Sender().ID)
 	if err != nil {
@@ -297,79 +325,216 @@ func (m *Monitor) HandlePrivateMessage(uc *UpdateContext) error {
 	return nil
 }
 
-func (m *Monitor) removeGreetingsForUser(ctx context.Context, user *models.User) error {
-	msgs, err := m.storage.GetMessagesForUser(ctx, user.ID, user.ChatID, models.MessageTypeGreeting)
+func (m *Monitor) HandleNewMemberCallbackAction(uc *UpdateContext, action CallbackAction) error {
+	uc.L().Infof("handling new member callback action %v, data %v", action, uc.Callback().Data)
+
+	if err := m.checkSenderAdmin(uc); err != nil {
+		uc.L().Warnf("sender is not an admin: %v", err)
+		if err := uc.TC().Respond(&telebot.CallbackResponse{
+			Text: fmt.Sprintf("you are not an admin: %v", err),
+		}); err != nil {
+			uc.L().Errorf("failed to respond: %v", err)
+		}
+		return nil
+	}
+
+	tokens := strings.SplitN(uc.Callback().Data, "|", 2)
+	if len(tokens) != 2 {
+		uc.L().Warnf("unexpected callback data: %v", uc.Callback().Data)
+		if err := uc.TC().Respond(&telebot.CallbackResponse{Text: "bad callback data"}); err != nil {
+			uc.L().Errorf("failed to respond: %v", err)
+		}
+		return nil
+	}
+
+	targetUserID, err := strconv.ParseInt(tokens[1], 10, 64)
+	if err != nil {
+		uc.L().Warnf("failed to parse target user id: %v", err)
+		if err := uc.TC().Respond(&telebot.CallbackResponse{Text: "bad user id"}); err != nil {
+			uc.L().Errorf("failed to respond: %v", err)
+		}
+		return nil
+	}
+
+	user, err := m.storage.GetChatUser(uc, uc.Chat().ID, targetUserID)
+	if err != nil {
+		return fmt.Errorf("getting user: %w", err)
+	}
+
+	if user.Status != models.UserStatusJustJoined {
+		uc.L().Warnf("user status is not just joined, ignoring")
+		if err := uc.TC().Respond(&telebot.CallbackResponse{Text: "user status is not just joined"}); err != nil {
+			uc.L().Errorf("failed to respond: %v", err)
+		}
+		return nil
+	}
+
+	switch action {
+	case CallbackActionNewMemberAccept:
+		if err := m.storage.SetUserStatus(uc, user.ID, models.UserStatusActive); err != nil {
+			return fmt.Errorf("setting user status: %w", err)
+		}
+
+	case CallbackActionNewMemberKick:
+		if err := m.bot.Unban(uc.Chat(), &telebot.User{ID: targetUserID}); err != nil {
+			return fmt.Errorf("kicking user: %w", err)
+		}
+		if err := m.storage.SetUserStatus(uc, user.ID, models.UserStatusKicked); err != nil {
+			return fmt.Errorf("setting user status: %w", err)
+		}
+	}
+
+	if err := m.removeGreetingsForUser(uc, user); err != nil {
+		return fmt.Errorf("removing greetings for user: %w", err)
+	}
+
+	return nil
+}
+
+func (m *Monitor) removeGreetingsForUser(uc *UpdateContext, user *models.User) error {
+	msgs, err := m.storage.GetMessagesForUser(uc, user.ID, user.ChatID, models.MessageTypeGreeting)
 	if err != nil {
 		return fmt.Errorf("getting greetings: %w", err)
 	}
 
-	var finalErr error
 	for _, msg := range msgs {
-		if err := m.bot.Delete(msg); err != nil {
-			finalErr = errors.Join(finalErr, fmt.Errorf("deleting message %v: %w", msg, err))
-		}
+		m.deleteMessageChecked(msg, uc.L())
 	}
 
-	return finalErr
+	return nil
 }
 
 func (m *Monitor) RunCleaner(ctx context.Context) {
-	t := time.NewTicker(time.Minute)
-	defer t.Stop()
-
 	logger := logrus.WithField("component", "monitor_cleaner")
 
+	run := func() {
+		msgs, err := m.storage.GetMessagesOlderThan(
+			ctx,
+			time.Now().Add(-m.config.JoinLoginTimeout),
+		)
+		if err != nil {
+			logger.Errorf("failed to get messages: %v", err)
+			return
+		}
+		if len(msgs) == 0 {
+			return
+		}
+
+		logger.Infof("fetched %d old messages, cleaning up", len(msgs))
+		for _, msg := range msgs {
+			if msg.MessageType == models.MessageTypeGreeting {
+				user, err := m.storage.GetUser(ctx, msg.AssociatedUserID)
+				if err != nil {
+					logger.Errorf("failed to get user: %v", err)
+				} else if user.Status == models.UserStatusJustJoined {
+					logger.Infof("removing user %v by timeout", user.TelegramID)
+
+					if err := m.bot.Unban(
+						&telebot.Chat{ID: user.ChatID},
+						&telebot.User{ID: user.TelegramID},
+					); err != nil {
+						logger.Errorf("failed to kick user %v: %v", user, err)
+					}
+
+					if err := m.storage.SetUserStatus(ctx, user.ID, models.UserStatusKicked); err != nil {
+						logger.Errorf("failed to update user to kicked %v: %v", user, err)
+					}
+				}
+			}
+
+			m.deleteMessageChecked(msg, logger)
+		}
+
+		if err := m.storage.DeleteMessages(ctx, msgs); err != nil {
+			logger.Errorf("failed to delete messages: %v", err)
+		}
+	}
+
+	t := time.NewTicker(m.config.CleanerInterval)
+	defer t.Stop()
+
+	run()
 	for {
 		select {
 		case <-t.C:
-			msgs, err := m.storage.GetMessagesOlderThan(
-				ctx,
-				time.Now().Add(-m.config.JoinLoginTimeout),
-			)
-			if err != nil {
-				logger.Errorf("failed to get messages: %v", err)
-				continue
-			}
-			if len(msgs) == 0 {
-				logger.Debug("no old messages to clean")
-				break
-			}
-
-			logger.Infof("fetched %d old messages, cleaning up", len(msgs))
-			for _, msg := range msgs {
-				if msg.MessageType == models.MessageTypeGreeting {
-					user, err := m.storage.GetUser(ctx, msg.AssociatedUserID)
-					if err != nil {
-						logger.Errorf("failed to get user: %v", err)
-					} else if user.Status == models.UserStatusJustJoined {
-						logger.Infof("removing user %v by timeout", user.TelegramID)
-
-						if err := m.bot.Unban(
-							&telebot.Chat{ID: user.ChatID},
-							&telebot.User{ID: user.TelegramID},
-						); err != nil {
-							logger.Errorf("failed to kick user %v: %v", user, err)
-						}
-
-						if err := m.storage.OnUserKicked(ctx, user.ID); err != nil {
-							logger.Errorf("failed to update user to kicked %v: %v", user, err)
-						}
-					}
-				}
-
-				if err := m.bot.Delete(msg); err != nil {
-					logger.Errorf("failed to delete message %v: %v", msg, err)
-				}
-			}
-
-			if err := m.storage.DeleteMessages(ctx, msgs); err != nil {
-				logger.Errorf("failed to delete messages: %v", err)
-			}
-
+			run()
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func (m *Monitor) RunUpdateChatAdmins(ctx context.Context) {
+	logger := logrus.WithField("component", "monitor_chat_admins")
+
+	run := func() {
+		chats, err := m.storage.GetChatStates(ctx)
+		if err != nil {
+			logger.Errorf("failed to get chat states: %v", err)
+			return
+		}
+
+		me := m.bot.(*telebot.Bot).Me
+
+		for _, chat := range chats {
+			member, err := m.bot.ChatMemberOf(&telebot.Chat{ID: chat.ChatID}, &telebot.User{ID: me.ID})
+			if err != nil {
+				logger.Errorf("failed to get self chat member for chat %v: %v", chat, err)
+				continue
+			}
+			logger.Debugf("chat %v has self member role: %v", chat.ChatID, member.Role)
+			chat.Member = member
+
+			admins, err := m.bot.AdminsOf(&telebot.Chat{ID: chat.ChatID})
+			if err != nil {
+				logger.Errorf("failed to get chat admins for chat %v: %v", chat, err)
+				continue
+			}
+			logger.Debugf("chat %v has %d admins", chat, len(admins))
+			chat.Admins = admins
+
+			if err := m.storage.UpdateChatState(ctx, chat); err != nil {
+				logger.Errorf("failed to update chat state for chat %v: %v", chat, err)
+			}
+		}
+	}
+
+	t := time.NewTicker(m.config.ChatSyncerInterval)
+	defer t.Stop()
+
+	run()
+	for {
+		select {
+		case <-t.C:
+			run()
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (m *Monitor) deleteMessageChecked(msg telebot.Editable, logger *logrus.Entry) {
+	if err := m.bot.Delete(msg); err != nil {
+		if errors.Is(err, telebot.ErrNotFoundToDelete) {
+			logger.Debugf("message %v was already deleted", msg)
+		} else {
+			logger.Errorf("failed to delete message %v: %v", msg, err)
+		}
+	}
+}
+
+func (m *Monitor) checkSenderAdmin(uc *UpdateContext) error {
+	if len(uc.ChatState().Admins) == 0 {
+		return fmt.Errorf("no admins synced for chat")
+	}
+
+	if !slices.ContainsFunc(uc.ChatState().Admins, func(u telebot.ChatMember) bool {
+		return u.User.ID == uc.Sender().ID
+	}) {
+		return fmt.Errorf("user is not one of %d known admins", len(uc.ChatState().Admins))
+	}
+
+	return nil
 }
 
 func isMemberStatus(member *telebot.ChatMember) bool {

@@ -10,11 +10,12 @@ import (
 
 type UpdateContext struct {
 	context.Context
-	tc  telebot.Context
-	log *logrus.Entry
+	tc        telebot.Context
+	log       *logrus.Entry
+	chatState *models.ChatState
 }
 
-func NewUpdateContext(c context.Context, tc telebot.Context) *UpdateContext {
+func NewUpdateContext(c context.Context, tc telebot.Context, chatState *models.ChatState) *UpdateContext {
 	fields := logrus.Fields{
 		"update.id": tc.Update().ID,
 	}
@@ -30,9 +31,10 @@ func NewUpdateContext(c context.Context, tc telebot.Context) *UpdateContext {
 	}
 
 	return &UpdateContext{
-		Context: c,
-		tc:      tc,
-		log:     logrus.WithFields(fields),
+		Context:   c,
+		tc:        tc,
+		chatState: chatState,
+		log:       logrus.WithFields(fields),
 	}
 }
 
@@ -47,6 +49,10 @@ func (uc *UpdateContext) SetLoggerUser(user *models.User) {
 		"user.ctftime_id":  user.CTFTimeUserID,
 		"user.status":      user.Status,
 	})
+}
+
+func (uc *UpdateContext) ChatState() *models.ChatState {
+	return uc.chatState
 }
 
 func (uc *UpdateContext) TC() telebot.Context {
@@ -67,4 +73,8 @@ func (uc *UpdateContext) Chat() *telebot.Chat {
 
 func (uc *UpdateContext) Sender() *telebot.User {
 	return uc.tc.Sender()
+}
+
+func (uc *UpdateContext) Callback() *telebot.Callback {
+	return uc.tc.Callback()
 }

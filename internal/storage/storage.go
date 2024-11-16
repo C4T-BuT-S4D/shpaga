@@ -7,6 +7,7 @@ import (
 
 	"github.com/C4T-BuT-S4D/shpaga/internal/models"
 	"github.com/google/uuid"
+	"gopkg.in/telebot.v4"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -20,7 +21,7 @@ func New(db *gorm.DB) *Storage {
 }
 
 func (s *Storage) Migrate(ctx context.Context) error {
-	if err := s.getDB(ctx).AutoMigrate(&models.GlobalState{}, &models.User{}, &models.Message{}); err != nil {
+	if err := s.getDB(ctx).AutoMigrate(models.All...); err != nil {
 		return fmt.Errorf("migrating database: %w", err)
 	}
 	return nil
@@ -61,6 +62,51 @@ func (s *Storage) UpdateLastUpdate(ctx context.Context, updateID int) error {
 		Update("last_update_id", updateID).
 		Error; err != nil {
 		return fmt.Errorf("updating last update: %w", err)
+	}
+	return nil
+}
+
+func (s *Storage) GetOrCreateChatState(ctx context.Context, chatID int64, chatType telebot.ChatType) (*models.ChatState, error) {
+	var res models.ChatState
+	if err := s.getDB(ctx).Transaction(func(tx *gorm.DB) error {
+		// Optimistic check if chat state exists
+		if err := tx.Where("chat_id = ?", chatID).First(&res).Error; err == nil {
+			return nil
+		}
+
+		if err := tx.
+			Clauses(clause.OnConflict{DoNothing: true}).
+			Create(&models.ChatState{
+				ChatID:   chatID,
+				ChatType: chatType,
+			}).
+			Error; err != nil {
+			return fmt.Errorf("creating chat state: %w", err)
+		}
+
+		if err := tx.Where("chat_id = ?", chatID).First(&res).Error; err != nil {
+			return fmt.Errorf("getting chat state: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("in tx: %w", err)
+	}
+
+	return &res, nil
+}
+
+func (s *Storage) GetChatStates(ctx context.Context) ([]*models.ChatState, error) {
+	var res []*models.ChatState
+	if err := s.getDB(ctx).Find(&res).Error; err != nil {
+		return nil, fmt.Errorf("getting chat states: %w", err)
+	}
+	return res, nil
+}
+
+func (s *Storage) UpdateChatState(ctx context.Context, chatState *models.ChatState) error {
+	if err := s.getDB(ctx).Save(chatState).Error; err != nil {
+		return fmt.Errorf("updating chat state: %w", err)
 	}
 	return nil
 }
@@ -139,21 +185,6 @@ func (s *Storage) OnUserAuthorized(ctx context.Context, userID string, ctftimeUs
 		Updates(map[string]any{
 			"ctftime_user_id": ctftimeUserID,
 			"status":          models.UserStatusActive,
-		}).
-		Error; err != nil {
-		return fmt.Errorf("updating user: %w", err)
-	}
-
-	return nil
-}
-
-func (s *Storage) OnUserKicked(ctx context.Context, userID string) error {
-	if err := s.
-		getDB(ctx).
-		Model(&models.User{}).
-		Where("id = ?", userID).
-		Updates(map[string]any{
-			"status": models.UserStatusKicked,
 		}).
 		Error; err != nil {
 		return fmt.Errorf("updating user: %w", err)

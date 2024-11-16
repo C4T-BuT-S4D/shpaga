@@ -56,6 +56,7 @@ func main() {
 				"message",
 				"chat_member",
 				"my_chat_member",
+				"callback_query",
 			},
 		},
 	})
@@ -71,6 +72,7 @@ func main() {
 		telebot.OnUserLeft,
 		telebot.OnChatMember,
 		telebot.OnMyChatMember,
+		telebot.OnCallback,
 	} {
 		bot.Handle(updateType, mon.HandleAnyUpdate)
 	}
@@ -88,6 +90,12 @@ func main() {
 		mon.RunCleaner(ctx)
 	}()
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		mon.RunUpdateChatAdmins(ctx)
+	}()
+
 	<-ctx.Done()
 
 	bot.Stop()
@@ -99,5 +107,9 @@ func main() {
 func setupConfig() {
 	viper.SetDefault("bot_handle_timeout", "10s")
 	viper.SetDefault("join_login_timeout", "10m")
+
+	viper.SetDefault("cleaner_interval", "15s")
+	viper.SetDefault("chat_syncer_interval", "1m")
+
 	config.SetupCommon()
 }
