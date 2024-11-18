@@ -477,24 +477,26 @@ func (m *Monitor) RunUpdateChatAdmins(ctx context.Context) {
 		me := m.bot.(*telebot.Bot).Me
 
 		for _, chat := range chats {
+			chatLogger := logger.WithField("chat_id", chat.ChatID)
+
 			member, err := m.bot.ChatMemberOf(&telebot.Chat{ID: chat.ChatID}, &telebot.User{ID: me.ID})
 			if err != nil {
-				logger.Errorf("failed to get self chat member for chat %v: %v", chat, err)
+				chatLogger.Errorf("failed to get self chat member: %v", err)
 				continue
 			}
-			logger.Debugf("chat %v has self member role: %v", chat.ChatID, member.Role)
+			chatLogger.Debugf("self member role: %v", member.Role)
 			chat.Member = member
 
 			admins, err := m.bot.AdminsOf(&telebot.Chat{ID: chat.ChatID})
 			if err != nil {
-				logger.Errorf("failed to get chat admins for chat %v: %v", chat, err)
+				chatLogger.Errorf("failed to get chat admins: %v", err)
 				continue
 			}
-			logger.Debugf("chat %v has %d admins", chat, len(admins))
+			chatLogger.Debugf("chat has %d admins", len(admins))
 			chat.Admins = admins
 
 			if err := m.storage.UpdateChatState(ctx, chat); err != nil {
-				logger.Errorf("failed to update chat state for chat %v: %v", chat, err)
+				chatLogger.Errorf("failed to update chat state for chat %v: %v", chat, err)
 			}
 		}
 	}

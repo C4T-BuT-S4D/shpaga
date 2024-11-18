@@ -68,6 +68,7 @@ func main() {
 
 	for _, updateType := range []string{
 		telebot.OnText,
+		telebot.OnForward,
 		telebot.OnUserJoined,
 		telebot.OnUserLeft,
 		telebot.OnChatMember,
