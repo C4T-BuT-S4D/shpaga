@@ -477,6 +477,10 @@ func (m *Monitor) RunUpdateChatAdmins(ctx context.Context) {
 		me := m.bot.(*telebot.Bot).Me
 
 		for _, chat := range chats {
+			if chat.ChatType == telebot.ChatPrivate {
+				continue
+			}
+
 			chatLogger := logger.WithField("chat_id", chat.ChatID)
 
 			member, err := m.bot.ChatMemberOf(&telebot.Chat{ID: chat.ChatID}, &telebot.User{ID: me.ID})
