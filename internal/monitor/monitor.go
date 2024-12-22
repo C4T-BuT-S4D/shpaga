@@ -190,6 +190,7 @@ func (m *Monitor) HandleNewMember(uc *UpdateContext) error {
 		} else {
 			name = uc.Sender().Username
 		}
+		name = escapeMarkdownV2(name)
 
 		botName := uc.Bot().(*telebot.Bot).Me.Username
 		url := fmt.Sprintf("t.me/%s?start=%d", botName, user.ChatID)
@@ -549,4 +550,27 @@ func isMemberStatus(member *telebot.ChatMember) bool {
 
 func isLeftStatus(member *telebot.ChatMember) bool {
 	return member == nil || member.Role == telebot.Left || member.Role == telebot.Kicked
+}
+
+func escapeMarkdownV2(s string) string {
+	return strings.NewReplacer(
+		"_", "\\_",
+		"*", "\\*",
+		"[", "\\[",
+		"]", "\\]",
+		"(", "\\(",
+		")", "\\)",
+		"~", "\\~",
+		"`", "\\`",
+		">", "\\>",
+		"#", "\\#",
+		"+", "\\+",
+		"-", "\\-",
+		"=", "\\=",
+		"|", "\\|",
+		"{", "\\{",
+		"}", "\\}",
+		".", "\\.",
+		"!", "\\!",
+	).Replace(s)
 }
